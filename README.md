@@ -144,16 +144,3 @@ CMD ["python", "app.py"]
 | **Gradio format** | Uses modern `{"role": "user"}` format |
 | **Memory full** | Increase ChromaDB persist_directory size |
 | **Slow analysis** | Reduce frame_interval or use faster GPU |
-
-## 🤝 Contributing
-
-1. Fork repository
-2. Create feature branch
-3. Add tests in `tests/`
-4. Submit PR
-
-**Good first issues:** Chat export, CCTV RTSP, multi-language.
-
-## 📄 License
-
-MIT License - Free for commercial use! 

@@ -24,10 +24,11 @@ import copy
 import gradio as gr
 
 from pathlib import Path
-from collections import deque
 from dotenv import load_dotenv
 
 from langchain_chroma import Chroma
+from langchain_classic.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableSequence
 from langchain_core.documents import Document
 from langchain_ollama import ChatOllama
 
@@ -53,7 +54,7 @@ os.makedirs(VIDEO_FOLDER, exist_ok=True)
 os.makedirs(FRAME_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-VISION_MODEL = os.getenv("VISION_MODEL")
+VISION_MODEL = os.getenv("VISION_MODEL", "gemma4:latest")
 CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen2.5:latest")
 
 # ============================================================
@@ -62,13 +63,52 @@ CHAT_MODEL = os.getenv("CHAT_MODEL", "qwen2.5:latest")
 
 vision_llm = ChatOllama(
     model=VISION_MODEL,
-    temperature=0
+    temperature=0,
 )
 
-chat_llm = ChatOllama(
-    model=CHAT_MODEL,
-    temperature=0
+prompt = ChatPromptTemplate.from_template(
+    """
+    You are a CamQuery Assistant.
+
+    Use:
+    1. Retrieved video memory
+    2. Previous conversation context
+
+    to answer naturally and consistently.
+
+    ==============================
+    PREVIOUS CONVERSATION
+    ==============================
+    {conversation_context}
+
+    ==============================
+    RETRIEVED VIDEO MEMORY
+    ==============================
+    {memory}
+
+    ==============================
+    CURRENT USER QUESTION
+    ==============================
+    {message}
+
+    Instructions:
+    - Use ONLY retrieved frame/video data
+    - Reference timestamps when possible
+    - Understand follow-up questions using chat history
+    - If information is unavailable, say so clearly
+    """
 )
+# chat_llm = create_deep_agent(
+#     model=f"ollama:{CHAT_MODEL}",
+#     tools=[],
+#     # system_prompt=prompt
+# )
+
+llm = ChatOllama(
+    model=CHAT_MODEL,
+    temperature=0,
+)
+chat_llm = RunnableSequence(prompt, llm)
 
 # ============================================================
 # EMBEDDINGS
@@ -346,185 +386,36 @@ agent = create_deep_agent(
         search_video_memory
     ],
     system_prompt="""
-You are an AI video investigator with access to video memory tools.
+You are a CamQuery Assistant.
 
-IMPORTANT:
-- Users will ask questions about videos that were ALREADY analyzed.
-- NEVER ask users to upload videos again.
-- NEVER say you cannot access the video.
-- ALWAYS use search_video_memory for ANY question about video content.
+Use:
+1. Retrieved video memory
+2. Previous conversation context
 
-Examples:
-- "how many people are in sample1"
-- "what is the video about"
-- "was it raining"
-- "describe the scene"
-- "what objects are visible"
-- "what happens at 20 seconds"
+to answer naturally and consistently.
 
-For all video-related questions:
-1. Use search_video_memory
-2. Read retrieved frames
-3. Answer using retrieved evidence
+==============================
+PREVIOUS CONVERSATION
+==============================
+{conversation_context}
+
+==============================
+RETRIEVED VIDEO MEMORY
+==============================
+{memory}
+
+==============================
+CURRENT USER QUESTION
+==============================
+{message}
+
+Instructions:
+- Use ONLY retrieved frame/video data
+- Reference timestamps when possible
+- Understand follow-up questions using chat history
+- If information is unavailable, say so clearly
 """
 )
-
-# ============================================================
-# PROCESS ALL VIDEOS
-# ============================================================
-
-video_files = []
-
-# for ext in ["*.mp4", "*.avi", "*.mov", "*.mkv"]:
-
-#     video_files.extend(
-#         Path(VIDEO_FOLDER).glob(ext)
-#     )
-
-# for video in video_files:
-
-#     print("=" * 80)
-#     print("PROCESSING:", video)
-
-#     process_video(str(video))
-
-# ============================================================
-# GRADIO INTERFACE - COMPLETE WORKING VERSION
-# ============================================================
-
-# with gr.Blocks(title="CamQuery Assistant", theme=gr.themes.Soft()) as demo:
-    
-#     gr.Markdown("# 🎥 CamQuery Assistant")
-#     gr.Markdown("Upload videos, process them, then ask questions about content, timestamps, objects, and scenes!")
-    
-#     with gr.Row():
-#         with gr.Column(scale=1):
-#             # Video upload section
-#             video_upload = gr.File(
-#                 label="📹 Upload Video", 
-#                 file_types=[".mp4", ".avi", ".mov", ".mkv"],
-#                 type="filepath"
-#             )
-#             process_btn = gr.Button("🔄 Process Video", variant="primary")
-#             status = gr.Textbox(label="Status", interactive=False)
-            
-#         with gr.Column(scale=2):
-#             # Chat interface
-#             chatbot = gr.Chatbot(
-#                 height=500,
-#                 avatar_images=("user.png", "bot.png")
-#             )
-#             msg = gr.Textbox(
-#                 placeholder="Ask about video content: 'what happens at 30 seconds?', 'how many people?', 'is it raining?'",
-#                 label="💬 Your Question",
-#                 scale=3
-#             )
-#             send_btn = gr.Button("Send", scale=1)
-    
-#     # ========================================================
-#     # PROCESS VIDEO FUNCTION
-#     # ========================================================
-#     def process_uploaded_video(video_path):
-#         if not video_path:
-#             return "❌ No video uploaded!", gr.update()
-#         try:
-#             result = process_video(video_path)
-#             return f"✅ {result}", gr.update()
-#         except Exception as e:
-#             return f"❌ Error: {str(e)}", gr.update()
-    
-#     # ========================================================
-#     # CHAT RESPONSE FUNCTION
-#     # ========================================================
-#     def respond(message, history):
-#         if not message.strip():
-#             return "", history
-        
-#         try:
-#             # Search video memory
-#             memory = search_video_memory(message)
-            
-#             # Create prompt
-#             prompt = f"""Retrieved Memory:
-#     {memory}
-
-#     Question: {message}
-
-#     Answer clearly using ONLY the retrieved frame data. Reference specific timestamps and frame numbers."""
-            
-#             # Get LLM response
-#             response = chat_llm.invoke(prompt)
-            
-#             # NEW FORMAT: Dictionary with role/content (Gradio 4.0+)
-#             new_message = {
-#                 "role": "user", 
-#                 "content": message
-#             }
-#             bot_message = {
-#                 "role": "assistant", 
-#                 "content": response.content
-#             }
-            
-#             # Append both messages
-#             history.append(new_message)
-#             history.append(bot_message)
-            
-#             return "", history
-            
-#         except Exception as e:
-#             error_msg = {
-#                 "role": "assistant", 
-#                 "content": f"❌ Error: {str(e)}"
-#             }
-#             history.append({
-#                 "role": "user", 
-#                 "content": message
-#             })
-#             history.append(error_msg)
-#             return "", history
-    
-#     # ========================================================
-#     # EVENT HANDLERS (ALL INSIDE Blocks context)
-#     # ========================================================
-    
-#     # Process video
-#     process_btn.click(
-#         process_uploaded_video,
-#         inputs=[video_upload],
-#         outputs=[status]
-#     )
-    
-#     # Chat submission
-#     msg.submit(
-#         respond,
-#         inputs=[msg, chatbot],
-#         outputs=[msg, chatbot]
-#     )
-    
-#     send_btn.click(
-#         respond,
-#         inputs=[msg, chatbot],
-#         outputs=[msg, chatbot]
-#     )
-    
-#     # Clear chat
-#     gr.Button("🗑️ Clear Chat").click(
-#         lambda: ([], ""),
-#         outputs=[chatbot, msg]
-#     )
-
-# # Launch
-# if __name__ == "__main__":
-#     demo.launch(
-#         server_name="127.0.0.1",
-#         server_port=7860,
-#         share=False,  # Set True for public link
-#         show_error=True,
-#         debug=True
-#     )
-
-# Store max 3 chat sessions
-chat_sessions = deque(maxlen=3)
 
 # ========================================================
 # MAIN UI
@@ -564,16 +455,6 @@ with gr.Blocks(title="CamQuery Assistant", theme=gr.themes.Soft()) as demo:
                 label="Status",
                 interactive=False
             )
-
-            # gr.Markdown("## 🕘 Previous Chats")
-
-            # history_dropdown = gr.Dropdown(
-            #     choices=[],
-            #     label="Select Previous Chat",
-            #     interactive=True
-            # )
-
-            # load_chat_btn = gr.Button("📂 Load Selected Chat")
 
         # ========================================================
         # RIGHT PANEL
@@ -616,47 +497,6 @@ with gr.Blocks(title="CamQuery Assistant", theme=gr.themes.Soft()) as demo:
             return f"❌ Error: {str(e)}"
 
     # ========================================================
-    # SAVE CHAT HISTORY
-    # ========================================================
-    def save_chat(history):
-
-        if not history:
-            return gr.update(choices=[], value=None)
-
-        # Create title from first user message
-        title = "Chat"
-
-        for msg in history:
-            if msg["role"] == "user":
-                title = msg["content"][:40]
-                break
-
-        # Save deep copy
-        chat_sessions.appendleft({
-            "title": title,
-            "history": copy.deepcopy(history)
-        })
-
-        choices = [
-            chat["title"]
-            for chat in chat_sessions
-        ]
-
-        return gr.update(choices=choices)
-
-    # ========================================================
-    # LOAD SELECTED CHAT
-    # ========================================================
-    def load_chat(selected_title):
-
-        for chat in chat_sessions:
-
-            if chat["title"] == selected_title:
-                return chat["history"]
-
-        return []
-
-    # ========================================================
     # CHAT RESPONSE FUNCTION
     # ========================================================
     def respond(message, history):
@@ -689,45 +529,24 @@ with gr.Blocks(title="CamQuery Assistant", theme=gr.themes.Soft()) as demo:
                 )
 
             # ====================================================
-            # FINAL PROMPT
-            # ====================================================
-
-            prompt = f"""
-    You are a CamQuery Assistant.
-
-    Use:
-    1. Retrieved video memory
-    2. Previous conversation context
-
-    to answer naturally and consistently.
-
-    ==============================
-    PREVIOUS CONVERSATION
-    ==============================
-    {conversation_context}
-
-    ==============================
-    RETRIEVED VIDEO MEMORY
-    ==============================
-    {memory}
-
-    ==============================
-    CURRENT USER QUESTION
-    ==============================
-    {message}
-
-    Instructions:
-    - Use ONLY retrieved frame/video data
-    - Reference timestamps when possible
-    - Understand follow-up questions using chat history
-    - If information is unavailable, say so clearly
-    """
-
-            # ====================================================
             # LLM RESPONSE
             # ====================================================
 
-            response = chat_llm.invoke(prompt)
+            print("memory:", memory)
+
+            # response = chat_llm.invoke({
+            #     "message": message,
+            #     "conversation_context": conversation_context,
+            #     "memory": memory
+            # })["messages"][0]
+
+            response = chat_llm.invoke({
+                "message": message,
+                "conversation_context": conversation_context,
+                "memory": memory
+            })
+
+            # print("LLM Response:", response)
 
             # Add messages to history
             history.append({
@@ -740,7 +559,7 @@ with gr.Blocks(title="CamQuery Assistant", theme=gr.themes.Soft()) as demo:
                 "content": response.content
             })
 
-            return "", history, gr.update()
+            return "", history
 
         except Exception as e:
 
@@ -777,20 +596,13 @@ with gr.Blocks(title="CamQuery Assistant", theme=gr.themes.Soft()) as demo:
     msg.submit(
         respond,
         inputs=[msg, chatbot],
-        outputs=[msg, chatbot, history_dropdown]
+        outputs=[msg, chatbot]
     )
 
     send_btn.click(
         respond,
         inputs=[msg, chatbot],
-        outputs=[msg, chatbot, history_dropdown]
-    )
-
-    # Load previous chat
-    load_chat_btn.click(
-        load_chat,
-        inputs=[history_dropdown],
-        outputs=[chatbot]
+        outputs=[msg, chatbot]
     )
 
     # Clear current chat
