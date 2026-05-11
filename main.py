@@ -66,49 +66,11 @@ vision_llm = ChatOllama(
     temperature=0,
 )
 
-prompt = ChatPromptTemplate.from_template(
-    """
-    You are a CamQuery Assistant.
-
-    Use:
-    1. Retrieved video memory
-    2. Previous conversation context
-
-    to answer naturally and consistently.
-
-    ==============================
-    PREVIOUS CONVERSATION
-    ==============================
-    {conversation_context}
-
-    ==============================
-    RETRIEVED VIDEO MEMORY
-    ==============================
-    {memory}
-
-    ==============================
-    CURRENT USER QUESTION
-    ==============================
-    {message}
-
-    Instructions:
-    - Use ONLY retrieved frame/video data
-    - Reference timestamps when possible
-    - Understand follow-up questions using chat history
-    - If information is unavailable, say so clearly
-    """
-)
-# chat_llm = create_deep_agent(
-#     model=f"ollama:{CHAT_MODEL}",
-#     tools=[],
-#     # system_prompt=prompt
+# llm = ChatOllama(
+#     model=CHAT_MODEL,
+#     temperature=0,
 # )
-
-llm = ChatOllama(
-    model=CHAT_MODEL,
-    temperature=0,
-)
-chat_llm = RunnableSequence(prompt, llm)
+# chat_llm = RunnableSequence(prompt, llm)
 
 # ============================================================
 # EMBEDDINGS
@@ -379,43 +341,47 @@ Analysis:
 # CREATE AGENT
 # ============================================================
 
-agent = create_deep_agent(
-    model=f"ollama:{CHAT_MODEL}",
-    tools=[
-        # process_video,
-        search_video_memory
-    ],
-    system_prompt="""
-You are a CamQuery Assistant.
+prompt = ChatPromptTemplate.from_template(
+    """
+    You are a CamQuery Assistant.
 
-Use:
-1. Retrieved video memory
-2. Previous conversation context
+    Use:
+    1. Retrieved video memory
+    2. Previous conversation context
 
-to answer naturally and consistently.
+    to answer naturally and consistently.
 
-==============================
-PREVIOUS CONVERSATION
-==============================
-{conversation_context}
+    ==============================
+    PREVIOUS CONVERSATION
+    ==============================
+    {conversation_context}
 
-==============================
-RETRIEVED VIDEO MEMORY
-==============================
-{memory}
+    ==============================
+    RETRIEVED VIDEO MEMORY
+    ==============================
+    {memory}
 
-==============================
-CURRENT USER QUESTION
-==============================
-{message}
 
-Instructions:
-- Use ONLY retrieved frame/video data
-- Reference timestamps when possible
-- Understand follow-up questions using chat history
-- If information is unavailable, say so clearly
-"""
+    ==============================
+    CURRENT USER QUESTION
+    ==============================
+    {message}
+
+    Instructions:
+    - Use ONLY retrieved frame/video data
+    - Reference timestamps when possible
+    - Understand follow-up questions using chat history
+    - If information is unavailable, say so clearly
+    """
 )
+
+chat_agent = create_deep_agent(
+    model=f"ollama:{CHAT_MODEL}",
+    tools=[],
+)
+
+chat_llm = RunnableSequence(prompt, chat_agent)
+# chat_llm = chat_agent
 
 # ========================================================
 # MAIN UI
@@ -463,7 +429,7 @@ with gr.Blocks(title="CamQuery Assistant", theme=gr.themes.Soft()) as demo:
 
             chatbot = gr.Chatbot(
                 height=500,
-                avatar_images=("./artifacts/picture/GMC_BW.jpg", "./artifacts/picture/bot.webp"),
+                avatar_images=("./artifacts/pictures/GMC_BW.jpg", "./artifacts/pictures/bot.webp"),
                 # type="messages"
             )
 
@@ -532,21 +498,21 @@ with gr.Blocks(title="CamQuery Assistant", theme=gr.themes.Soft()) as demo:
             # LLM RESPONSE
             # ====================================================
 
-            print("memory:", memory)
-
-            # response = chat_llm.invoke({
-            #     "message": message,
-            #     "conversation_context": conversation_context,
-            #     "memory": memory
-            # })["messages"][0]
-
-            response = chat_llm.invoke({
+            raw_response = chat_llm.invoke({
                 "message": message,
                 "conversation_context": conversation_context,
                 "memory": memory
             })
 
-            # print("LLM Response:", response)
+            # print("RAW RESPONSE:", raw_response)
+
+            response = raw_response["messages"][-1]
+
+            # response = chat_llm.invoke({
+            #     "message": message,
+            #     "conversation_context": conversation_context,
+            #     "memory": memory
+            # })
 
             # Add messages to history
             history.append({
