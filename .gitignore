@@ -228,4 +228,5 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-artifacts/generated/
+artifacts/generated/video-db
+artifacts/generated/frames
